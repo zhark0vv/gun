@@ -12,25 +12,11 @@ import (
 	"time"
 )
 
-type OrderResponse struct {
-	Data  OrderData `json:"data"`
-	Error string    `json:"error"`
-}
-
-type OrderData struct {
-	OrderID      int64  `json:"order_id"`
-	Number       string `json:"number"`
-	OrderStateID int    `json:"order_state_id"`
-	Items        []Item `json:"items"`
-}
-
-type Item struct {
-	ID       int64 `json:"id"`
-	ItemID   int64 `json:"item_id"`
-	Quantity int   `json:"quantity"`
-}
-
-const reqTemplate = `
+const (
+	twoDaysDuration   = 48 * time.Hour
+	postingTimeFormat = "2006-01-02T15:04:05.999Z"
+	deliveryVariantID = "52895552000"
+	reqTemplate       = `
 {
     "client_id": %d,
     "client_loyalty_state_id": 4,
@@ -81,8 +67,8 @@ const reqTemplate = `
     "delivery_attributes": [
         {
             "id": 1,
-            "delivery_date_begin": "2023-11-22T11:09:39.942Z",
-            "delivery_date_end": "2023-11-22T11:09:39.942Z",
+            "delivery_date_begin": "%s",
+            "delivery_date_end": "%s",
             "delivery_additional_payment": 0
         }
     ],
@@ -94,7 +80,7 @@ const reqTemplate = `
     "client_delivery_variant": "From supply chain QA - delivery",
     "delivery_choice_id": 1,
     "client_account_payment": 0,
-    "client_exit_date": "2023-11-22T11:30:58.745Z",
+    "client_exit_date": "%s",
     "mart_id": 1,
     "ip": "192.168.0.1",
     "is_cross_dock": false,
@@ -129,10 +115,10 @@ const reqTemplate = `
         {
             "posting_suggested_number": 1,
             "address": "key_1",
-            "physical_store_id": 96695,
-            "shipment_date": "2023-11-22T11:30:58.745Z",
-            "min_delivery_date": "2023-11-22T11:30:58.745Z",
-            "max_delivery_date": "2023-11-22T11:30:58.745Z",
+            "physical_store_id": %d,
+            "shipment_date": "%s",
+            "min_delivery_date": "%s",
+            "max_delivery_date": "%s",
             "delivery_payment_for_time_slot": 0,
             "is_user_choice": true,
             "items": [
@@ -149,12 +135,12 @@ const reqTemplate = `
                 }
             ],
             "is_simulated": false,
-            "seller_warehouse_id": "18978815247000",
+            "seller_warehouse_id": "%d",
             "shipping_provider_id": 1461294009000,
             "marketplace_seller_id": 120,
             "delivery_price": 300,
             "rezon_delivery_variant_id": 96695,
-            "clearing_delivery_variant_id": "15708161816000",
+            "clearing_delivery_variant_id": "19260466388000",
             "delivery_schema": "FBO",
             "delivery_type": "PVZ",
             "delivery_variant_name": "Текстовое название доставки",
@@ -177,7 +163,7 @@ const reqTemplate = `
                 }
             ],
             "tpl_integration_type": "Ozon",
-            "time_slot_id": 1014000134414314
+            "time_slot_id": %d
         }
     ],
     "marketing_client_order_marketing_actions": [],
@@ -200,6 +186,93 @@ const reqTemplate = `
     "marketing_addition_info": []
 }
 `
+)
+
+var rezonIDToLozonID = map[int64]int64{
+	9833:  18563481106000,
+	12856: 18978815247000,
+	13905: 19136337102000,
+	15713: 19353590229000,
+	19068: 19628347939000,
+	19069: 19628362881000,
+	19070: 19628192764000,
+	28131: 20541497697000,
+	29408: 20623596164000,
+	36890: 21065078343000,
+	40826: 21234202382000,
+	40877: 21235377898000,
+	41221: 21244372081000,
+	41851: 21234748347000,
+	49113: 21635160585000,
+	51672: 21712648363000,
+	51673: 21712065853000,
+	54925: 21866746620000,
+	60634: 21937650569000,
+	61612: 21949378111000,
+	65778: 21997990704000,
+	65852: 21998478464000,
+	71879: 22056808468000,
+	72853: 22056771051000,
+	73412: 22056813805000,
+	74887: 22089924655000,
+	74891: 22089905704000,
+	74943: 22090298282000,
+	74945: 22090316119000,
+	84842: 22183690255000,
+	84843: 22183687779000,
+	92421: 22258301599000,
+	92422: 22258306068000,
+	96688: 22284298547000,
+	96689: 22284239943000,
+	96690: 22284293407000,
+	96691: 22284287204000,
+	96694: 22284231396000,
+	96695: 22284282304000,
+}
+
+type OrderResponse struct {
+	Data  OrderData `json:"data"`
+	Error string    `json:"error"`
+}
+
+type OrderData struct {
+	OrderID      int64  `json:"order_id"`
+	Number       string `json:"number"`
+	OrderStateID int    `json:"order_state_id"`
+	Items        []Item `json:"items"`
+}
+
+type Item struct {
+	ID       int64 `json:"id"`
+	ItemID   int64 `json:"item_id"`
+	Quantity int   `json:"quantity"`
+}
+
+type DeliveryVariantResponse struct {
+	Data []DelieveryVariantData `json:"data"`
+}
+
+type DelieveryVariantData struct {
+	ID int64 `json:"id"`
+}
+
+type TimeslotsResponse struct {
+	TimeSlots []TimeslotsData `json:"timeSlots"`
+}
+
+type TimeslotsData struct {
+	ID int64 `json:"id"`
+}
+
+func getPostingFormattedTime(time time.Time) string {
+	postingTime := time.Add(twoDaysDuration)
+	return getFormattedTime(postingTime)
+}
+
+func getFormattedTime(time time.Time) string {
+	formattedTime := time.Format(postingTimeFormat)
+	return formattedTime
+}
 
 func main() {
 	var goroutinesStr, postingsStr string
@@ -229,17 +302,37 @@ func main() {
 		return
 	}
 
+	// Запрашиваем склад
+	fmt.Print("Введи Rezon ID склада: ")
+	_, err = fmt.Scanln(&postingsStr)
+	if err != nil {
+		fmt.Println("Ошибка ввода:", err)
+		return
+	}
+	warehouseID, err := strconv.Atoi(postingsStr)
+	if err != nil {
+		fmt.Println("Неверный ввод:", err)
+		return
+	}
+
+	lozonID, ok := rezonIDToLozonID[int64(warehouseID)]
+	if !ok {
+		fmt.Println("Такого склада нет!")
+		return
+	}
+
 	c := resty.New().SetHeader("Content-Type", "application/json")
 
 	// Запускаем горутины
-	if err := runPostings(goroutines, postings, c); err != nil {
+	postingConvTime := getPostingFormattedTime(time.Now())
+	if err := runPostings(goroutines, postings, postingConvTime, int64(warehouseID), lozonID, c); err != nil {
 		fmt.Println("Произошла ошибка:", err)
 	} else {
 		fmt.Println("Все задачи успешно выполнены")
 	}
 }
 
-func runPostings(goroutines, postings int, c *resty.Client) error {
+func runPostings(goroutines, postings int, postingConvTime string, warehouseID int64, lozonID int64, c *resty.Client) error {
 	g, ctx := errgroup.WithContext(context.Background())
 	tasksChan := make(chan int, postings)
 
@@ -257,7 +350,11 @@ func runPostings(goroutines, postings int, c *resty.Client) error {
 					if !ok {
 						return nil
 					}
-					if err := doPosting(ctx, c, clientId); err != nil {
+					tsID, err := formTimeslotID(ctx, c, lozonID)
+					if err != nil {
+						return err
+					}
+					if err := doPosting(ctx, c, clientId, postingConvTime, warehouseID, lozonID, tsID); err != nil {
 						return err
 					}
 				case <-ctx.Done():
@@ -277,8 +374,66 @@ func calculateClientID() int64 {
 	return r
 }
 
-func doPosting(ctx context.Context, c *resty.Client, clientId int64) error {
-	reqBody := fmt.Sprintf(reqTemplate, clientId)
+func formTimeslotID(ctx context.Context, c *resty.Client, lozonID int64) (int64, error) {
+	strLozonID := strconv.Itoa(int(lozonID))
+
+	resp, err := c.R().SetContext(ctx).SetQueryParams(map[string]string{
+		"deliveryVariantTypeId": deliveryVariantID,
+		"pageSize":              "1",
+		"pageNumber":            "1",
+		"sc":                    strLozonID,
+	}).Get("http://lms-qa-admin-latest.lms-qa-admin.svc.stg.k8s.o3.ru/deliveryVariants")
+
+	if err != nil {
+		return 0, err
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return 0, fmt.Errorf("/deliveryVariants: %d :%s", resp.StatusCode(), resp.Body())
+	}
+
+	var dr DeliveryVariantResponse
+	err = json.Unmarshal(resp.Body(), &dr)
+	if err != nil {
+		return 0, err
+	}
+
+	url := fmt.Sprintf("http://lms-qa-admin-latest.lms-qa-admin.svc.stg.k8s.o3.ru:80/deliveryVariants/%d/timeSlots",
+		dr.Data[0].ID)
+
+	resp, err = c.R().SetContext(ctx).
+		Get(url)
+
+	if err != nil {
+		return 0, err
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return 0, fmt.Errorf("/timeSlots: %d :%s", resp.StatusCode(), resp.Body())
+	}
+
+	var tr TimeslotsResponse
+	err = json.Unmarshal(resp.Body(), &tr)
+	if err != nil {
+		return 0, err
+	}
+
+	return tr.TimeSlots[0].ID, nil
+}
+
+func doPosting(ctx context.Context, c *resty.Client, clientId int64, postingConvTime string, warehouseID int64, lozonID int64, timeslotID int64) error {
+	reqBody := fmt.Sprintf(reqTemplate,
+		clientId,
+		postingConvTime,
+		postingConvTime,
+		postingConvTime,
+		warehouseID,
+		postingConvTime,
+		postingConvTime,
+		postingConvTime,
+		lozonID,
+		timeslotID,
+	)
 	resp, err := c.R().SetContext(ctx).
 		SetBody(reqBody).
 		Post("http://oms-go-api-web.oms.stg.s.o3.ru/v2/order/create")
@@ -297,7 +452,7 @@ func doPosting(ctx context.Context, c *resty.Client, clientId int64) error {
 	}
 
 	req2 := map[string]interface{}{
-		"clientOrderDate": "2023-11-22T09:41:54.140Z",
+		"clientOrderDate": getFormattedTime(time.Now()),
 		"productId":       or.Data.Items[0].ID,
 		"price":           0,
 		"number":          or.Data.Number,
