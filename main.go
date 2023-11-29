@@ -91,7 +91,7 @@ const (
     "tags": [],
     "items": [
         {
-            "item_id": "140927810",
+            "item_id": %d,
             "marketplace_seller_id": 120,
             "marketplace_seller_price": 300,
             "price": 300,
@@ -123,7 +123,7 @@ const (
             "is_user_choice": true,
             "items": [
                 {
-                    "item_id": "140927810",
+                    "item_id": %d,
                     "quantity": 1,
                     "item_availability_id": 1,
                     "weight": 5000,
@@ -264,6 +264,14 @@ type TimeslotsData struct {
 	ID int64 `json:"id"`
 }
 
+type templateFields struct {
+	postingConvTime string
+	warehouseID     int64
+	itemID          int64
+	lozonID         int64
+	timeslotID      int64
+}
+
 func getPostingFormattedTime(time time.Time) string {
 	postingTime := time.Add(twoDaysDuration)
 	return getFormattedTime(postingTime)
@@ -274,8 +282,20 @@ func getFormattedTime(time time.Time) string {
 	return formattedTime
 }
 
+func buildTemplateFields(postingConvTime string, warehouseID int64, itemID int64, lozonID int64, timeslotID int64) templateFields {
+	return templateFields{
+		postingConvTime: postingConvTime,
+		warehouseID:     warehouseID,
+		itemID:          itemID,
+		lozonID:         lozonID,
+		timeslotID:      timeslotID,
+	}
+}
+
 func main() {
-	var goroutinesStr, postingsStr string
+	ctx := context.Background()
+
+	var goroutinesStr, postingsStr, rezonStr, itemStr string
 
 	fmt.Print("Сколько потоков (горутин)? ")
 	_, err := fmt.Scanln(&goroutinesStr)
@@ -304,12 +324,12 @@ func main() {
 
 	// Запрашиваем склад
 	fmt.Print("Введи Rezon ID склада: ")
-	_, err = fmt.Scanln(&postingsStr)
+	_, err = fmt.Scanln(&rezonStr)
 	if err != nil {
 		fmt.Println("Ошибка ввода:", err)
 		return
 	}
-	warehouseID, err := strconv.Atoi(postingsStr)
+	warehouseID, err := strconv.Atoi(rezonStr)
 	if err != nil {
 		fmt.Println("Неверный ввод:", err)
 		return
@@ -321,18 +341,34 @@ func main() {
 		return
 	}
 
+	// Запрашиваем ItemID
+	fmt.Print("Введи Item ID: ")
+	_, err = fmt.Scanln(&itemStr)
+	if err != nil {
+		fmt.Println("Ошибка ввода:", err)
+		return
+	}
+	itemID, err := strconv.Atoi(itemStr)
+	if err != nil {
+		fmt.Println("Неверный ввод:", err)
+		return
+	}
+
 	c := resty.New().SetHeader("Content-Type", "application/json")
 
-	// Запускаем горутины
+	tsID, err := formTimeslotID(ctx, c, lozonID)
 	postingConvTime := getPostingFormattedTime(time.Now())
-	if err := runPostings(goroutines, postings, postingConvTime, int64(warehouseID), lozonID, c); err != nil {
+	tf := buildTemplateFields(postingConvTime, int64(warehouseID), int64(itemID), lozonID, tsID)
+
+	// Запускаем горутины
+	if err := runPostings(goroutines, postings, c, tf); err != nil {
 		fmt.Println("Произошла ошибка:", err)
 	} else {
 		fmt.Println("Все задачи успешно выполнены")
 	}
 }
 
-func runPostings(goroutines, postings int, postingConvTime string, warehouseID int64, lozonID int64, c *resty.Client) error {
+func runPostings(goroutines, postings int, c *resty.Client, tf templateFields) error {
 	g, ctx := errgroup.WithContext(context.Background())
 	tasksChan := make(chan int, postings)
 
@@ -342,7 +378,6 @@ func runPostings(goroutines, postings int, postingConvTime string, warehouseID i
 	close(tasksChan)
 
 	for i := 0; i < goroutines; i++ {
-		clientId := calculateClientID()
 		g.Go(func() error {
 			for {
 				select {
@@ -350,11 +385,7 @@ func runPostings(goroutines, postings int, postingConvTime string, warehouseID i
 					if !ok {
 						return nil
 					}
-					tsID, err := formTimeslotID(ctx, c, lozonID)
-					if err != nil {
-						return err
-					}
-					if err := doPosting(ctx, c, clientId, postingConvTime, warehouseID, lozonID, tsID); err != nil {
+					if err := doPosting(ctx, c, tf); err != nil {
 						return err
 					}
 				case <-ctx.Done():
@@ -421,19 +452,22 @@ func formTimeslotID(ctx context.Context, c *resty.Client, lozonID int64) (int64,
 	return tr.TimeSlots[0].ID, nil
 }
 
-func doPosting(ctx context.Context, c *resty.Client, clientId int64, postingConvTime string, warehouseID int64, lozonID int64, timeslotID int64) error {
+func doPosting(ctx context.Context, c *resty.Client, tf templateFields) error {
 	reqBody := fmt.Sprintf(reqTemplate,
-		clientId,
-		postingConvTime,
-		postingConvTime,
-		postingConvTime,
-		warehouseID,
-		postingConvTime,
-		postingConvTime,
-		postingConvTime,
-		lozonID,
-		timeslotID,
+		calculateClientID(),
+		tf.postingConvTime,
+		tf.postingConvTime,
+		tf.postingConvTime,
+		tf.itemID,
+		tf.warehouseID,
+		tf.postingConvTime,
+		tf.postingConvTime,
+		tf.postingConvTime,
+		tf.itemID,
+		tf.lozonID,
+		tf.timeslotID,
 	)
+
 	resp, err := c.R().SetContext(ctx).
 		SetBody(reqBody).
 		Post("http://oms-go-api-web.oms.stg.s.o3.ru/v2/order/create")
