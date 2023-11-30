@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-resty/resty/v2"
-	"golang.org/x/sync/errgroup"
 	"math/big"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -370,8 +370,12 @@ func main() {
 }
 
 func runPostings(goroutines, postings int, c *resty.Client, tf templateFields) error {
-	g, ctx := errgroup.WithContext(context.Background())
+	var wg sync.WaitGroup
 	tasksChan := make(chan int, postings)
+	isSleeping := false
+
+	var mu sync.Mutex
+	cond := sync.NewCond(&mu)
 
 	for i := 0; i < postings; i++ {
 		tasksChan <- i
@@ -379,24 +383,40 @@ func runPostings(goroutines, postings int, c *resty.Client, tf templateFields) e
 	close(tasksChan)
 
 	for i := 0; i < goroutines; i++ {
-		g.Go(func() error {
-			for {
-				select {
-				case _, ok := <-tasksChan:
-					if !ok {
-						return nil
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range tasksChan {
+				mu.Lock()
+				if isSleeping {
+					cond.Wait()
+				}
+				mu.Unlock()
+
+				if err := doPosting(context.Background(), c, tf); err != nil {
+					mu.Lock()
+					if !isSleeping {
+						isSleeping = true
+						mu.Unlock()
+						fmt.Printf("Словили ошибку: %v\n", err)
+						fmt.Println("Спим 5...")
+						for i := 4; i > 0; i-- {
+							time.Sleep(1 * time.Second)
+							fmt.Printf("Спим %d...\n", i)
+						}
+						time.Sleep(1 * time.Second)
+						mu.Lock()
+						isSleeping = false
+						cond.Broadcast()
 					}
-					if err := doPosting(ctx, c, tf); err != nil {
-						return err
-					}
-				case <-ctx.Done():
-					return ctx.Err()
+					mu.Unlock()
 				}
 			}
-		})
+		}()
 	}
 
-	return g.Wait()
+	wg.Wait()
+	return nil
 }
 
 func calculateClientID() (int64, error) {
