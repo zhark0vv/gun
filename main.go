@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"github.com/go-resty/resty/v2"
 	"golang.org/x/sync/errgroup"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"strconv"
 	"time"
@@ -398,11 +399,17 @@ func runPostings(goroutines, postings int, c *resty.Client, tf templateFields) e
 	return g.Wait()
 }
 
-func calculateClientID() int64 {
-	rand.Seed(time.Now().UnixNano())
-	r := rand.Int63n(99999999-10000000+1) + 10000000
-	fmt.Println(r)
-	return r
+func calculateClientID() (int64, error) {
+	max := big.NewInt(999999999)
+	min := big.NewInt(100000)
+
+	diff := new(big.Int).Sub(max, min)
+	n, err := rand.Int(rand.Reader, diff)
+	if err != nil {
+		return 0, err
+	}
+	fmt.Println(n.Int64())
+	return n.Int64(), nil
 }
 
 func formTimeslotID(ctx context.Context, c *resty.Client, lozonID int64) (int64, error) {
@@ -453,8 +460,13 @@ func formTimeslotID(ctx context.Context, c *resty.Client, lozonID int64) (int64,
 }
 
 func doPosting(ctx context.Context, c *resty.Client, tf templateFields) error {
+	clId, err := calculateClientID()
+	if err != nil {
+		return err
+	}
+
 	reqBody := fmt.Sprintf(reqTemplate,
-		calculateClientID(),
+		clId,
 		tf.postingConvTime,
 		tf.postingConvTime,
 		tf.postingConvTime,
