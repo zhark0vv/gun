@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/go-resty/resty/v2"
 	"math/big"
@@ -296,41 +297,55 @@ func buildTemplateFields(postingConvTime string, warehouseID int64, itemID int64
 func main() {
 	ctx := context.Background()
 
-	var goroutinesStr, postingsStr, rezonStr, itemStr string
+	goroutinesStr := flag.String("g", "", "Number of goroutines")
+	postingsStr := flag.String("p", "", "Number of postings")
+	rezonStr := flag.String("rid", "", "Rezon ID of the warehouse")
+	itemStr := flag.String("item", "", "Item ID")
 
-	fmt.Print("Сколько потоков (горутин)? ")
-	_, err := fmt.Scanln(&goroutinesStr)
-	if err != nil {
-		fmt.Println("Ошибка ввода:", err)
-		return
+	// Parse flags
+	flag.Parse()
+
+	if *goroutinesStr == "" {
+		fmt.Print("Сколько потоков (горутин)? ")
+		_, err := fmt.Scanln(goroutinesStr)
+		if err != nil {
+			fmt.Println("Ошибка ввода:", err)
+			return
+		}
 	}
-	goroutines, err := strconv.Atoi(goroutinesStr)
+
+	goroutines, err := strconv.Atoi(*goroutinesStr)
 	if err != nil {
 		fmt.Println("Неверный ввод:", err)
 		return
 	}
 
 	// Запрашиваем количество постингов
-	fmt.Print("Сколько нужно постингов? ")
-	_, err = fmt.Scanln(&postingsStr)
-	if err != nil {
-		fmt.Println("Ошибка ввода:", err)
-		return
+	if *postingsStr == "" {
+		fmt.Print("Сколько нужно постингов? ")
+		_, err = fmt.Scanln(postingsStr)
+		if err != nil {
+			fmt.Println("Ошибка ввода:", err)
+			return
+		}
 	}
-	postings, err := strconv.Atoi(postingsStr)
+
+	postings, err := strconv.Atoi(*postingsStr)
 	if err != nil {
 		fmt.Println("Неверный ввод:", err)
 		return
 	}
 
-	// Запрашиваем склад
-	fmt.Print("Введи Rezon ID склада: ")
-	_, err = fmt.Scanln(&rezonStr)
-	if err != nil {
-		fmt.Println("Ошибка ввода:", err)
-		return
+	if *rezonStr == "" {
+		// Запрашиваем склад
+		fmt.Print("Введи Rezon ID склада: ")
+		_, err = fmt.Scanln(rezonStr)
+		if err != nil {
+			fmt.Println("Ошибка ввода:", err)
+			return
+		}
 	}
-	warehouseID, err := strconv.Atoi(rezonStr)
+	warehouseID, err := strconv.Atoi(*rezonStr)
 	if err != nil {
 		fmt.Println("Неверный ввод:", err)
 		return
@@ -342,14 +357,17 @@ func main() {
 		return
 	}
 
-	// Запрашиваем ItemID
-	fmt.Print("Введи Item ID: ")
-	_, err = fmt.Scanln(&itemStr)
-	if err != nil {
-		fmt.Println("Ошибка ввода:", err)
-		return
+	if *itemStr == "" {
+		// Запрашиваем ItemID
+		fmt.Print("Введи Item ID: ")
+		_, err = fmt.Scanln(itemStr)
+		if err != nil {
+			fmt.Println("Ошибка ввода:", err)
+			return
+		}
 	}
-	itemID, err := strconv.Atoi(itemStr)
+
+	itemID, err := strconv.Atoi(*itemStr)
 	if err != nil {
 		fmt.Println("Неверный ввод:", err)
 		return
@@ -456,6 +474,9 @@ func formTimeslotID(ctx context.Context, c *resty.Client, lozonID int64) (int64,
 		return 0, err
 	}
 
+	if len(dr.Data) == 0 {
+		return 0, fmt.Errorf("deliveryVariants - нет данных")
+	}
 	url := fmt.Sprintf("http://lms-qa-admin-latest.lms-qa-admin.svc.stg.k8s.o3.ru:80/deliveryVariants/%d/timeSlots",
 		dr.Data[0].ID)
 
